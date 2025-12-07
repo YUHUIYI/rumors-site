@@ -28,7 +28,7 @@ const useStyles = makeStyles(theme => ({
   tabs: {
     margin: '0 var(--card-px)',
     paddingTop: theme.spacing(1),
-    position: 'relative',
+    position: 'relative', // for ::after
     '&::before': {
       content: '""',
       position: 'absolute',
@@ -44,8 +44,6 @@ const LOAD_USER = gql`
   query LoadProfilePage($id: String, $slug: String) {
     GetUser(id: $id, slug: $slug) {
       id
-      slug
-      name
       createdAt
       ...UserHeaderData
       contributions {
@@ -74,51 +72,50 @@ const LOAD_CONTRIBUTION = gql`
 `;
 
 function ProfilePage({ id, slug }) {
-  const router = useRouter();
   const classes = useStyles();
   const currentUser = useCurrentUser();
-
-  // ---- 1. 先抓 user 資料 ----
   const { data, loading } = useQuery(LOAD_USER, {
     variables: { id, slug },
+    notifyOnNetworkStatusChange: true, // 确保在重新获取数据时 loading 为 true
+    fetchPolicy: 'cache-and-network', // 即使有缓存也重新获取，确保数据是最新的
   });
-
-  const user = data?.GetUser;
-  const userId = user?.id;
-  const latestSlug = user?.slug;
-
   const { data: contributionData } = useQuery(LOAD_CONTRIBUTION, {
-    variables: { id: userId },
-    skip: !userId,
-    ssr: false,
+    variables: { id: data?.GetUser?.id },
+    skip: !data?.GetUser?.id,
+    ssr: false, // Speed up SSR
   });
 
-  // ---- 2. 安全 redirect（避免 loop + 等後端更新） ----
-  useEffect(() => {
-    if (loading) return;           // 資料未到 → 不 redirect
-    if (!userId) return;           // userId 尚未取到 → 不 redirect
-    if (latestSlug === undefined) return; // slug 尚未準備好 → 不 redirect
+  const isSelf = currentUser && data?.GetUser?.id === currentUser.id;
 
-    const target = latestSlug
+  // Automatic redirect to (new) slug
+  //
+  const router = useRouter();
+  const latestSlug = data?.GetUser?.slug; // slug may update after user edits
+  const userId = data?.GetUser?.id;
+  useEffect(() => {
+    if (!latestSlug && latestSlug !== '') return;
+    const targetPath = latestSlug
       ? `/user/${encodeURI(latestSlug)}`
       : `/user?id=${userId}`;
+    if (router.asPath !== targetPath) {
+      // 如果 slug 发生变化，等待一段时间让后端数据库更新后再重定向
+      const currentSlug = router.query.slug;
+      if (latestSlug && latestSlug !== currentSlug) {
+        setTimeout(() => {
+          router.replace(targetPath);
+        }, 1500);
+      } else {
+        router.replace(targetPath);
+      }
+    }
+  }, [latestSlug, userId, router]);
 
-    const currentBase = router.asPath.split('?')[0];
-    if (currentBase === target) return;
-
-    // ★ 延遲 1 秒再 redirect，避免後端 slug 還沒寫完
-    const timer = setTimeout(() => {
-      router.replace(target);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [loading, userId, latestSlug]);
-
-  // ---- 3. Loading 狀態 ----
-  if (loading || !userId) {
+  if (loading) {
     return (
       <AppLayout container={false}>
-        <Head><title>{t`Loading`}</title></Head>
+        <Head>
+          <title>{t`Loading`}</title>
+        </Head>
         <Container maxWidth="md" className={classes.container}>
           Loading...
         </Container>
@@ -126,11 +123,12 @@ function ProfilePage({ id, slug }) {
     );
   }
 
-  // ---- 4. User not found ----
-  if (!user) {
+  if (!data || !data.GetUser) {
     return (
       <AppLayout container={false}>
-        <Head><title>{t`User not found`}</title></Head>
+        <Head>
+          <title>{t`User not found`}</title>
+        </Head>
         <Container maxWidth="md" className={classes.container}>
           {t`The user does not exist`}
         </Container>
@@ -141,42 +139,40 @@ function ProfilePage({ id, slug }) {
   const {
     query: { tab = 'replies' },
   } = router;
-
+  let contentElem = null;
+  switch (tab) {
+    case 'replies':
+      contentElem = <RepliedArticleTab userId={data?.GetUser?.id} />;
+      break;
+    case 'comments':
+      contentElem = <CommentTab userId={data?.GetUser?.id} />;
+      break;
+  }
   const today = format(new Date(), 'yyyy-MM-dd');
   const aYearAgo = format(
     startOfWeek(subDays(new Date(), 365), { weekStartsOn: 6 }),
     'yyyy-MM-dd'
   );
 
-  let contentElem = null;
-  switch (tab) {
-    case 'replies':
-      contentElem = <RepliedArticleTab userId={userId} />;
-      break;
-    case 'comments':
-      contentElem = <CommentTab userId={userId} />;
-      break;
-  }
-
   return (
     <AppLayout container={false}>
-      <Head><title>{user.name}</title></Head>
-
+      <Head>
+        <title>{data.GetUser.name}</title>
+      </Head>
       <Container maxWidth="md" className={classes.container}>
         <UserPageHeader
-          user={user}
-          isSelf={currentUser && user.id === currentUser.id}
+          user={data.GetUser}
+          isSelf={isSelf}
           stats={{
             repliedArticles: contributionData?.repliedArticles?.totalCount,
             commentedReplies: contributionData?.commentedReplies?.totalCount,
             comments: contributionData?.comments?.totalCount,
           }}
         />
-
         <ContributionChart
           startDate={aYearAgo}
           endDate={today}
-          data={user.contributions}
+          data={data.GetUser.contributions}
         />
 
         <Card>
@@ -186,13 +182,12 @@ function ProfilePage({ id, slug }) {
             indicatorColor="primary"
             textColor="primary"
             onChange={(e, tab) => {
-              router.push({ query: { tab, id: userId } });
+              router.push({ query: { tab, id, slug } });
             }}
           >
             <Tab value="replies" label={t`Replied messages`} />
             <Tab value="comments" label={t`Comments`} />
           </Tabs>
-
           {contentElem}
         </Card>
       </Container>
