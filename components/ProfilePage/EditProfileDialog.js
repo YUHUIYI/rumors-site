@@ -34,7 +34,7 @@ function EditProfileDialog({ user, onClose = () => {} }) {
     onCompleted(data) {
       const newSlug = data?.UpdateUser?.slug;
       const oldSlug = user.slug;
-      // 如果更新了 username (slug)，等待一段时间让后端数据库更新
+      // If username (slug) is updated, wait for backend database to update
       if (newSlug !== oldSlug) {
         setTimeout(() => {
           onClose();

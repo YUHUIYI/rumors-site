@@ -76,8 +76,8 @@ function ProfilePage({ id, slug }) {
   const currentUser = useCurrentUser();
   const { data, loading } = useQuery(LOAD_USER, {
     variables: { id, slug },
-    notifyOnNetworkStatusChange: true, // 确保在重新获取数据时 loading 为 true
-    fetchPolicy: 'cache-and-network', // 即使有缓存也重新获取，确保数据是最新的
+    notifyOnNetworkStatusChange: true, // Ensure loading is true when refetching data
+    fetchPolicy: 'cache-and-network', // Refetch even with cache to ensure data is up to date
   });
   const { data: contributionData } = useQuery(LOAD_CONTRIBUTION, {
     variables: { id: data?.GetUser?.id },
@@ -98,7 +98,7 @@ function ProfilePage({ id, slug }) {
       ? `/user/${encodeURI(latestSlug)}`
       : `/user?id=${userId}`;
     if (router.asPath !== targetPath) {
-      // 如果 slug 发生变化，等待一段时间让后端数据库更新后再重定向
+      // If slug has changed, wait for backend database to update before redirecting
       const currentSlug = router.query.slug;
       if (latestSlug && latestSlug !== currentSlug) {
         setTimeout(() => {

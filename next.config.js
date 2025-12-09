@@ -49,11 +49,17 @@ module.exports = {
         ],
       },
       {
-        // Langfuse SDK - handle .mjs files
-        // Use defaultLoaders.babel to ensure all Babel plugins from .babelrc.js are included
-        test: /node_modules\\langfuse/,//for windows
+        // Langfuse SDK
+        test: /node_modules\/langfuse/,
         type: 'javascript/auto', // https://stackoverflow.com/a/74957466/1582110
-        use: defaultLoaders.babel,
+        use: [
+          {
+            loader: 'babel-loader',
+            options: {
+              presets: ['@babel/preset-env'],
+            },
+          },
+        ],
       }
     );
 
